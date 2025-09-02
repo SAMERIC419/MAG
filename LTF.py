@@ -150,7 +150,6 @@ st.markdown(
 y = pd.to_numeric(work["ltfu"], errors="coerce")
 X = work.drop(columns=["ltfu"])  # raw; preprocessing in pipelines
 
-<<<<<<< HEAD
 # Remove rows with NaN target values
 valid_mask = ~y.isna()
 if not valid_mask.all():
@@ -167,9 +166,6 @@ if len(y) < 10:
 if len(y.unique()) < 2:
     st.error("Target variable must have at least 2 classes. Please check your data.")
     st.stop()
-
-=======
->>>>>>> 38b903356b8f3dccf926310ccfef18e135a4ae79
 # Coerce binary Yes/No -> 0/1 if applicable
 for b in bin_cols:
     if b in X.columns:
