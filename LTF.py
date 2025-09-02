@@ -60,7 +60,7 @@ use_class_weight = st.sidebar.checkbox("Logistic: balanced class_weight", value=
 use_early_stopping = st.sidebar.checkbox("XGBoost: early stopping", value=True)
 
 st.sidebar.markdown("---")
-st.sidebar.info("This app follows your study's methodology (variables, splits, metrics, and interpretability).")
+st.sidebar.info("This app follows my study's methodology (variables, splits, metrics, and interpretability).")
 
 # ===== Helpers =====
 def read_df(file):
@@ -146,8 +146,32 @@ st.markdown(
     f"**Using features** → Numeric: `{num_cols}` · Binary: `{bin_cols}` · Categorical: `{cat_cols}`"
 )
 
-# Clean target
-y = pd.to_numeric(work["ltfu"], errors="coerce")
+# Clean target - first inspect the data
+st.subheader("Target Column Analysis")
+target_col = work["ltfu"]
+st.write(f"**Target column '{target_col.name}' contains:**")
+st.write(f"- Total rows: {len(target_col)}")
+st.write(f"- Unique values: {target_col.unique()[:10]}")  # Show first 10 unique values
+st.write(f"- Data types: {target_col.dtype}")
+
+# Try to convert to numeric, but handle common cases
+y_original = target_col.copy()
+
+# Handle common non-numeric cases
+if target_col.dtype == 'object':
+    # Try common mappings first
+    y_mapped = target_col.map({
+        'Yes': 1, 'No': 0, 'yes': 1, 'no': 0,
+        '1': 1, '0': 0, 'True': 1, 'False': 0,
+        'true': 1, 'false': 0, 'Y': 1, 'N': 0,
+        'y': 1, 'n': 0, 'LTFU': 1, 'Not LTFU': 0,
+        'ltfu': 1, 'not ltfu': 0
+    })
+    # Then try numeric conversion
+    y = pd.to_numeric(y_mapped, errors="coerce")
+else:
+    y = pd.to_numeric(target_col, errors="coerce")
+
 X = work.drop(columns=["ltfu"])  # raw; preprocessing in pipelines
 
 # Remove rows with NaN target values
@@ -155,6 +179,7 @@ valid_mask = ~y.isna()
 invalid_count = (~valid_mask).sum()
 if invalid_count > 0:
     st.warning(f"Removing {invalid_count} rows with missing target values out of {len(y)} total rows")
+    st.write(f"**Sample of problematic values:** {y_original[~valid_mask].head(10).tolist()}")
     X = X[valid_mask]
     y = y[valid_mask]
 
