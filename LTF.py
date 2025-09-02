@@ -220,6 +220,47 @@ for b in bin_cols:
     if b in X.columns:
         X[b] = X[b].map({"Yes": 1, "No": 0, 1: 1, 0: 0}).astype("float64")
 
+# Data validation and cleaning
+st.subheader("Data Validation")
+st.write(f"**Feature matrix shape:** {X.shape}")
+st.write(f"**Feature data types:**")
+st.write(X.dtypes)
+
+# Check for problematic data types
+problematic_cols = []
+for col in X.columns:
+    if X[col].dtype == 'object':
+        # Check if it's actually numeric but stored as object
+        try:
+            pd.to_numeric(X[col], errors='raise')
+        except:
+            problematic_cols.append(col)
+
+if problematic_cols:
+    st.warning(f"**Found non-numeric columns that need attention:** {problematic_cols}")
+    st.write("These columns will be handled by the categorical encoder.")
+
+# Ensure all numeric columns are actually numeric
+for col in num_cols:
+    if col in X.columns:
+        try:
+            X[col] = pd.to_numeric(X[col], errors='coerce')
+        except:
+            st.warning(f"Could not convert {col} to numeric, keeping as is")
+
+# Check for infinite values
+inf_cols = []
+for col in X.columns:
+    if X[col].dtype in ['float64', 'int64']:
+        if np.isinf(X[col]).any():
+            inf_cols.append(col)
+
+if inf_cols:
+    st.warning(f"**Found infinite values in:** {inf_cols}")
+    # Replace infinite values with NaN
+    for col in inf_cols:
+        X[col] = X[col].replace([np.inf, -np.inf], np.nan)
+
 # Split
 X_trainval, X_test, y_trainval, y_test = train_test_split(
     X, y, test_size=test_size, stratify=y, random_state=RANDOM_STATE
@@ -285,31 +326,54 @@ prep_xgb = ColumnTransformer(
 
 # Fit models
 with st.spinner("Training models…"):
-    # Logistic
-    logit.fit(X_train, y_train)
+    try:
+        # Logistic
+        st.write("Training Logistic Regression...")
+        logit.fit(X_train, y_train)
+        st.write("✅ Logistic Regression trained successfully")
+    except Exception as e:
+        st.error(f"Error training Logistic Regression: {str(e)}")
+        st.write("**Debug info:**")
+        st.write(f"- X_train shape: {X_train.shape}")
+        st.write(f"- X_train dtypes: {X_train.dtypes.tolist()}")
+        st.write(f"- y_train shape: {y_train.shape}")
+        st.write(f"- y_train dtypes: {y_train.dtype}")
+        st.write(f"- y_train unique values: {y_train.unique()}")
+        st.stop()
 
-    # XGB with optional early stopping
-    Xtr_xgb = prep_xgb.fit_transform(X_train, y_train)
-    Xva_xgb = prep_xgb.transform(X_val)
-    ytr, yva = y_train.values, y_val.values
+    try:
+        # XGB with optional early stopping
+        st.write("Training XGBoost...")
+        Xtr_xgb = prep_xgb.fit_transform(X_train, y_train)
+        Xva_xgb = prep_xgb.transform(X_val)
+        ytr, yva = y_train.values, y_val.values
 
-    xgb_model = xgb.XGBClassifier(
-        objective="binary:logistic",
-        n_estimators=600,
-        learning_rate=0.05,
-        max_depth=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        reg_lambda=1.0,
-        random_state=RANDOM_STATE,
-        eval_metric="auc",
-    )
-    if use_early_stopping:
-        xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False, early_stopping_rounds=50)
-    else:
-        xgb_model.fit(Xtr_xgb, ytr)
+        xgb_model = xgb.XGBClassifier(
+            objective="binary:logistic",
+            n_estimators=600,
+            learning_rate=0.05,
+            max_depth=5,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            reg_lambda=1.0,
+            random_state=RANDOM_STATE,
+            eval_metric="auc",
+        )
+        if use_early_stopping:
+            xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False, early_stopping_rounds=50)
+        else:
+            xgb_model.fit(Xtr_xgb, ytr)
 
-    xgb_clf = Pipeline(steps=[("prep", prep_xgb), ("clf", xgb_model)])
+        xgb_clf = Pipeline(steps=[("prep", prep_xgb), ("clf", xgb_model)])
+        st.write("✅ XGBoost trained successfully")
+    except Exception as e:
+        st.error(f"Error training XGBoost: {str(e)}")
+        st.write("**Debug info:**")
+        st.write(f"- X_train shape: {X_train.shape}")
+        st.write(f"- X_val shape: {X_val.shape}")
+        st.write(f"- y_train shape: {y_train.shape}")
+        st.write(f"- y_val shape: {y_val.shape}")
+        st.stop()
 
 st.success("Models trained.")
 
