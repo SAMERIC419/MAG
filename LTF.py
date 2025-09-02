@@ -82,11 +82,15 @@ DEFAULT_EXPECTED = {
     "education": "education",
     "religion": "religion",
     "age": "age",
+    "gender": "Gender",
+    "whostage": "WHOSTAGE",
+    "agecat": "AgeCat",
+    "weightcat": "WeighCAt",
 }
 
 NUM_DEFAULT = ["durationindays", "weight", "cd4", "age"]
-BIN_DEFAULT = ["counseling", "disclosure"]
-CAT_DEFAULT = ["funds", "mstatus", "employmenstat", "education", "religion"]
+BIN_DEFAULT = ["counseling", "disclosure", "gender"]
+CAT_DEFAULT = ["funds", "mstatus", "employmenstat", "education", "religion", "whostage", "agecat", "weightcat"]
 
 @st.cache_data(show_spinner=False)
 def fit_onehot_categories(df, cat_cols):
@@ -118,10 +122,10 @@ with cm1:
     for k in ["ltfu", "durationindays", "weight", "cd4"]:
         col_map[k] = st.selectbox(f"Map '{k}'", cols, index=(cols.index(DEFAULT_EXPECTED[k]) if DEFAULT_EXPECTED[k] in df.columns else 0))
 with cm2:
-    for k in ["age", "counseling", "disclosure"]:
+    for k in ["age", "counseling", "disclosure", "gender"]:
         col_map[k] = st.selectbox(f"Map '{k}'", cols, index=(cols.index(DEFAULT_EXPECTED[k]) if DEFAULT_EXPECTED[k] in df.columns else 0))
 with cm3:
-    for k in ["funds", "mstatus", "employmenstat", "education", "religion"]:
+    for k in ["funds", "mstatus", "employmenstat", "education", "religion", "whostage", "agecat", "weightcat"]:
         col_map[k] = st.selectbox(f"Map '{k}'", cols, index=(cols.index(DEFAULT_EXPECTED[k]) if DEFAULT_EXPECTED[k] in df.columns else 0))
 
 # Build working dataframe
@@ -225,6 +229,12 @@ st.subheader("Data Validation")
 st.write(f"**Feature matrix shape:** {X.shape}")
 st.write(f"**Feature data types:**")
 st.write(X.dtypes)
+
+# Remove patient ID columns (not useful for prediction)
+id_cols = [col for col in X.columns if 'patient' in col.lower() or 'id' in col.lower()]
+if id_cols:
+    st.info(f"**Removing ID columns:** {id_cols}")
+    X = X.drop(columns=id_cols)
 
 # Check for problematic data types
 problematic_cols = []
@@ -358,9 +368,10 @@ with st.spinner("Training models…"):
             reg_lambda=1.0,
             random_state=RANDOM_STATE,
             eval_metric="auc",
+            early_stopping_rounds=50 if use_early_stopping else None,
         )
         if use_early_stopping:
-            xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False, early_stopping_rounds=50)
+            xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False)
         else:
             xgb_model.fit(Xtr_xgb, ytr)
 
