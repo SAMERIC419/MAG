@@ -38,7 +38,7 @@ import shap
 import matplotlib.pyplot as plt
 
 st.set_page_config(page_title="LTFU Analyzer", layout="wide")
-st.title("📊 LTFU Analyzer — HIV Care (One‑Page App)")
+st.title("📊 LTFU Analyzer — HIV Care ")
 st.caption("Upload your dataset, pick columns, train models, and explore insights.")
 
 RANDOM_STATE = 42
@@ -152,20 +152,25 @@ X = work.drop(columns=["ltfu"])  # raw; preprocessing in pipelines
 
 # Remove rows with NaN target values
 valid_mask = ~y.isna()
-if not valid_mask.all():
-    st.warning(f"Removing {valid_mask.sum()} rows with missing target values out of {len(y)} total rows")
+invalid_count = (~valid_mask).sum()
+if invalid_count > 0:
+    st.warning(f"Removing {invalid_count} rows with missing target values out of {len(y)} total rows")
     X = X[valid_mask]
     y = y[valid_mask]
 
 # Check if we have enough data
 if len(y) < 10:
-    st.error("Not enough valid data after cleaning. Please check your dataset.")
+    st.error(f"Not enough valid data after cleaning. Only {len(y)} rows remain. Please check your dataset.")
     st.stop()
 
 # Check if target has both classes
-if len(y.unique()) < 2:
-    st.error("Target variable must have at least 2 classes. Please check your data.")
+unique_classes = y.unique()
+if len(unique_classes) < 2:
+    st.error(f"Target variable must have at least 2 classes. Found only: {unique_classes}. Please check your data.")
     st.stop()
+
+# Display data summary
+st.info(f"✅ Data ready: {len(y)} rows, {len(unique_classes)} classes: {unique_classes}")
 # Coerce binary Yes/No -> 0/1 if applicable
 for b in bin_cols:
     if b in X.columns:
