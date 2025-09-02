@@ -258,6 +258,20 @@ for col in num_cols:
         except:
             st.warning(f"Could not convert {col} to numeric, keeping as is")
 
+# Convert all categorical columns to strings to avoid mixed data types
+for col in cat_cols:
+    if col in X.columns:
+        X[col] = X[col].astype(str)
+        # Replace 'nan' strings with actual NaN
+        X[col] = X[col].replace('nan', np.nan)
+
+# Convert all binary columns to strings as well
+for col in bin_cols:
+    if col in X.columns:
+        X[col] = X[col].astype(str)
+        # Replace 'nan' strings with actual NaN
+        X[col] = X[col].replace('nan', np.nan)
+
 # Check for infinite values
 inf_cols = []
 for col in X.columns:
