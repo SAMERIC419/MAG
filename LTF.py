@@ -159,14 +159,33 @@ y_original = target_col.copy()
 
 # Handle common non-numeric cases
 if target_col.dtype == 'object':
-    # Try common mappings first
-    y_mapped = target_col.map({
+    # Create comprehensive mapping for LTFU values
+    mapping_dict = {
+        # Standard Yes/No
         'Yes': 1, 'No': 0, 'yes': 1, 'no': 0,
         '1': 1, '0': 0, 'True': 1, 'False': 0,
         'true': 1, 'false': 0, 'Y': 1, 'N': 0,
-        'y': 1, 'n': 0, 'LTFU': 1, 'Not LTFU': 0,
-        'ltfu': 1, 'not ltfu': 0
-    })
+        'y': 1, 'n': 0,
+        # LTFU variations - LTFU = 1, Not-LTFU = 0
+        'LTFU': 1, 'ltfu': 1, 'Ltfu': 1,
+        'Not LTFU': 0, 'Not-LTFU': 0, 'not ltfu': 0, 'not-ltfu': 0,
+        'NOT LTFU': 0, 'NOT-LTFU': 0, 'Not Ltfu': 0, 'Not-ltfu': 0
+    }
+    
+    # Apply mapping
+    y_mapped = target_col.map(mapping_dict)
+    
+    # Show what values were found and mapped
+    unique_vals = target_col.unique()
+    st.write(f"**Found unique values:** {unique_vals}")
+    
+    # Check which values couldn't be mapped
+    unmapped_mask = y_mapped.isna()
+    if unmapped_mask.any():
+        unmapped_vals = target_col[unmapped_mask].unique()
+        st.warning(f"**Unmapped values found:** {unmapped_vals}")
+        st.write("These values will be converted to NaN and removed.")
+    
     # Then try numeric conversion
     y = pd.to_numeric(y_mapped, errors="coerce")
 else:
