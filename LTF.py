@@ -755,7 +755,7 @@ with st.spinner("Training models (cached for faster loading)…"):
             "training_date": datetime.now().isoformat()
         }
         
-                if save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
+        if save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
             st.success("💾 **Models saved successfully!** You can now use 'Use Saved Models (Fast)' mode for instant predictions.")
         else:
             st.warning("⚠️ Models trained but could not be saved. You'll need to retrain next time.")
@@ -830,7 +830,7 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
             X_tr, X_te = X_df.iloc[tr], X_df.iloc[te]
             y_tr, y_te = y_ser.iloc[tr], y_ser.iloc[te]
             
-                        # For XGBoost, create a new pipeline without early stopping for CV
+                                    # For XGBoost, create a new pipeline without early stopping for CV
             if hasattr(pipe.named_steps.get('clf'), 'early_stopping_rounds'):
                 # Create a copy of the pipeline with early stopping disabled
                 cv_pipe = pipe.__class__(steps=pipe.steps)
@@ -914,7 +914,7 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
     if st.button("🚀 Generate SHAP Explanations", type="primary"):
         with st.spinner("Computing SHAP values (this may take 1-2 minutes)..."):
             try:
-                                # Use a smaller sample for SHAP to speed up computation
+                                                # Use a smaller sample for SHAP to speed up computation
                 sample_size = min(1000, len(X_test))
                 X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
                 y_test_sample = y_test[X_test_sample.index]
@@ -924,7 +924,7 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
                 explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
                 shap_values = explainer.shap_values(X_test_proc)
 
-                                # Feature names
+                                                # Feature names
                 pre = xgb_clf.named_steps["prep"]
                 oh = pre.named_transformers_["cat"].named_steps["onehot"]
                 cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
