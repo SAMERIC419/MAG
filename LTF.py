@@ -638,6 +638,11 @@ if submitted:
     # Convert to DataFrame
     input_df = pd.DataFrame([input_data])
     
+    # Debug: Show what columns we have
+    st.write(f"**Debug Info:**")
+    st.write(f"- Training data columns: {list(X.columns)}")
+    st.write(f"- Prediction form columns: {list(input_df.columns)}")
+    
     # Ensure all columns are present and in correct order
     for col in X.columns:
         if col not in input_df.columns:
@@ -648,8 +653,13 @@ if submitted:
             elif col in cat_cols:
                 input_df[col] = "Unknown"
     
-    # Reorder columns to match training data
-    input_df = input_df[X.columns]
+    # Only reorder columns that actually exist in both datasets
+    common_cols = [col for col in X.columns if col in input_df.columns]
+    if len(common_cols) != len(X.columns):
+        st.warning(f"Some columns from training data are missing from prediction form. Using {len(common_cols)} out of {len(X.columns)} columns.")
+    
+    # Reorder columns to match training data (only common columns)
+    input_df = input_df[common_cols]
     
     try:
         # Get predictions from both models
