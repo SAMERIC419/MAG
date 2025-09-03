@@ -694,7 +694,7 @@ with st.spinner("Training models (cached for faster loading)…"):
         
         if save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
             st.success("💾 **Models saved successfully!** You can now use 'Use Saved Models (Fast)' mode for instant predictions.")
-    else:
+        else:
             st.warning("⚠️ Models trained but could not be saved. You'll need to retrain next time.")
             
     except Exception as e:
@@ -801,10 +801,18 @@ with imp_tabs[0]:
         if hasattr(pre, "get_feature_names_out"):
             fn = pre.get_feature_names_out()
         else:
-            oh = pre.named_transformers_["cat"].named_steps["onehot"]
-            cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+            # Get feature names from each transformer
             num_feat_names = [c for c in num_cols if c in X.columns]
             bin_feat_names = [c for c in bin_cols if c in X.columns]
+            
+            # Get categorical feature names from one-hot encoder
+            try:
+                oh = pre.named_transformers_["cat"].named_steps["onehot"]
+                cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+            except:
+                cat_feat_names = [c for c in cat_cols if c in X.columns]
+            
+            # Combine all feature names
             fn = np.array(list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names))
         imp_lr = pd.DataFrame({"feature": fn, "importance": r.importances_mean}) \
                     .sort_values("importance", ascending=False).reset_index(drop=True)
@@ -816,10 +824,19 @@ with imp_tabs[1]:
     r = permutation_importance(xgb_clf, X_test, y_test, n_repeats=10, random_state=RANDOM_STATE, scoring="roc_auc")
     try:
         pre = xgb_clf.named_steps["prep"]
-        oh = pre.named_transformers_["cat"].named_steps["onehot"]
-        cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+        
+        # Get feature names from each transformer
         num_feat_names = [c for c in num_cols if c in X.columns]
         bin_feat_names = [c for c in bin_cols if c in X.columns]
+        
+        # Get categorical feature names from one-hot encoder
+        try:
+            oh = pre.named_transformers_["cat"].named_steps["onehot"]
+            cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+        except:
+            cat_feat_names = [c for c in cat_cols if c in X.columns]
+        
+        # Combine all feature names
         fn = np.array(list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names))
         imp_x = pd.DataFrame({"feature": fn, "importance": r.importances_mean}) \
                     .sort_values("importance", ascending=False).reset_index(drop=True)
