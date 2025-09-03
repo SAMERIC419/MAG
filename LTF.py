@@ -73,7 +73,6 @@ def read_df(file):
     else:
         return pd.read_excel(file)
 
-@st.cache_data(show_spinner=False)
 def train_models_cached(X_train, y_train, X_val, y_val, use_class_weight, use_early_stopping, num_cols, bin_cols, cat_cols):
     """Cache model training to avoid retraining on every page load"""
     
@@ -181,7 +180,6 @@ NUM_DEFAULT = ["durationindays", "weight", "cd4", "age"]
 BIN_DEFAULT = ["counseling", "disclosure", "gender"]
 CAT_DEFAULT = ["funds", "mstatus", "employmenstat", "education", "religion", "whostage", "agecat", "weightcat"]
 
-@st.cache_data(show_spinner=False)
 def fit_onehot_categories(df, cat_cols):
     vals = {}
     for c in cat_cols:
@@ -405,9 +403,8 @@ with st.spinner("Training models (cached for faster loading)…"):
         st.write(f"- y_val shape: {y_val.shape}")
         st.stop()
 
-# Evaluation helper with caching
-@st.cache_data(show_spinner=False)
-def evaluate_cached(model, X_te, y_te, name, threshold):
+# Evaluation helper (without caching due to unhashable model objects)
+def evaluate(model, X_te, y_te, name, threshold):
     y_prob = model.predict_proba(X_te)[:, 1]
     y_pred = (y_prob >= threshold).astype(int)
     metrics = {
@@ -419,9 +416,9 @@ def evaluate_cached(model, X_te, y_te, name, threshold):
     }
     return metrics, y_prob, y_pred
 
-# Compute evals with caching
-metrics_lr, prob_lr, pred_lr = evaluate_cached(logit, X_test, y_test, "Logistic", default_threshold)
-metrics_xgb, prob_xgb, pred_xgb = evaluate_cached(xgb_clf, X_test, y_test, "XGB", default_threshold)
+# Compute evals
+metrics_lr, prob_lr, pred_lr = evaluate(logit, X_test, y_test, "Logistic", default_threshold)
+metrics_xgb, prob_xgb, pred_xgb = evaluate(xgb_clf, X_test, y_test, "XGB", default_threshold)
 
 # Layout
 m1, m2 = st.columns(2)
