@@ -40,6 +40,18 @@ import xgboost as xgb
 import shap
 import matplotlib.pyplot as plt
 
+# ===== Helper Functions (defined early to avoid NameError) =====
+def check_saved_models():
+    """Check if saved models exist and return their info"""
+    if os.path.exists("saved_models/metadata.pkl"):
+        try:
+            with open("saved_models/metadata.pkl", "rb") as f:
+                metadata = pickle.load(f)
+            return True, metadata
+        except:
+            return False, None
+    return False, None
+
 st.set_page_config(page_title="LTFU Analyzer", layout="wide")
 st.title("📊 LTFU Analyzer — HIV Care ")
 st.caption("Upload your dataset, pick columns, train models, and explore insights.")
@@ -98,17 +110,6 @@ st.sidebar.markdown("---")
 st.sidebar.info("This app follows my study's methodology (variables, splits, metrics, and interpretability).")
 
 # ===== Helpers =====
-def check_saved_models():
-    """Check if saved models exist and return their info"""
-    if os.path.exists("saved_models/metadata.pkl"):
-        try:
-            with open("saved_models/metadata.pkl", "rb") as f:
-                metadata = pickle.load(f)
-            return True, metadata
-        except:
-            return False, None
-    return False, None
-
 @st.cache_data(show_spinner=False)
 def read_df(file):
     if file.name.lower().endswith(".csv"):
