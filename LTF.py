@@ -98,13 +98,6 @@ st.sidebar.markdown("---")
 st.sidebar.info("This app follows my study's methodology (variables, splits, metrics, and interpretability).")
 
 # ===== Helpers =====
-@st.cache_data(show_spinner=False)
-def read_df(file):
-    if file.name.lower().endswith(".csv"):
-        return pd.read_csv(file)
-    else:
-        return pd.read_excel(file)
-
 def check_saved_models():
     """Check if saved models exist and return their info"""
     if os.path.exists("saved_models/metadata.pkl"):
@@ -115,6 +108,13 @@ def check_saved_models():
         except:
             return False, None
     return False, None
+
+@st.cache_data(show_spinner=False)
+def read_df(file):
+    if file.name.lower().endswith(".csv"):
+        return pd.read_csv(file)
+    else:
+        return pd.read_excel(file)
 
 def save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
     """Save trained models and metadata to disk"""
