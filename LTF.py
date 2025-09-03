@@ -605,7 +605,7 @@ with st.form("prediction_form"):
     with col3:
         st.markdown("**Clinical Factors**")
         whostage = st.selectbox("WHO Stage", ["Stage 1", "Stage 2", "Stage 3", "Stage 4"], index=0)
-        agecat = st.selectbox("Age Category", ["<25", "25-34", "35-44", "45-54", "55+"], index=1)
+        # Age category will be calculated automatically from age input
         weightcat = st.selectbox("Weight Category", ["Underweight", "Normal", "Overweight", "Obese"], index=1)
     
     # Submit button
@@ -615,6 +615,25 @@ with st.form("prediction_form"):
 if submitted:
     st.markdown("---")
     st.subheader("📊 Prediction Results")
+    
+    # Function to automatically calculate age category from age
+    def get_age_category(age_value):
+        if age_value < 25:
+            return "<25"
+        elif age_value < 35:
+            return "25-34"
+        elif age_value < 45:
+            return "35-44"
+        elif age_value < 55:
+            return "45-54"
+        else:
+            return "55+"
+    
+    # Calculate age category automatically from age input
+    agecat = get_age_category(age)
+    
+    # Show the calculated age category to the user
+    st.info(f"📊 **Age Category:** {age} years → {agecat}")
     
     # Create input data
     input_data = {
@@ -631,7 +650,7 @@ if submitted:
         'education': education,
         'religion': religion,
         'whostage': whostage,
-        'agecat': agecat,
+        'agecat': agecat,  # Now automatically calculated
         'weightcat': weightcat
     }
     
