@@ -105,6 +105,17 @@ def read_df(file):
     else:
         return pd.read_excel(file)
 
+def check_saved_models():
+    """Check if saved models exist and return their info"""
+    if os.path.exists("saved_models/metadata.pkl"):
+        try:
+            with open("saved_models/metadata.pkl", "rb") as f:
+                metadata = pickle.load(f)
+            return True, metadata
+        except:
+            return False, None
+    return False, None
+
 def save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
     """Save trained models and metadata to disk"""
     try:
@@ -153,17 +164,6 @@ def load_models():
     except Exception as e:
         st.error(f"Error loading models: {e}")
         return None, None, None, None, None, None
-
-def check_saved_models():
-    """Check if saved models exist and return their info"""
-    if os.path.exists("saved_models/metadata.pkl"):
-        try:
-            with open("saved_models/metadata.pkl", "rb") as f:
-                metadata = pickle.load(f)
-            return True, metadata
-        except:
-            return False, None
-    return False, None
 
 def train_models_cached(X_train, y_train, X_val, y_val, use_class_weight, use_early_stopping, num_cols, bin_cols, cat_cols):
     """Cache model training to avoid retraining on every page load"""
