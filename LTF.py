@@ -569,8 +569,178 @@ try:
 except Exception as e:
     st.warning(f"SHAP visualization skipped: {e}")
 
+# Interactive Prediction Form
+st.subheader("🔮 Interactive LTFU Prediction")
+st.write("Enter patient details below to get real-time LTFU predictions from both models:")
+
+# Create prediction form
+with st.form("prediction_form"):
+    st.markdown("### Patient Information")
+    
+    # Create columns for better layout
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**Demographics**")
+        # Numeric features
+        duration_days = st.number_input("Duration in Days", min_value=0, max_value=10000, value=365, step=1)
+        weight = st.number_input("Weight (kg)", min_value=0.0, max_value=200.0, value=60.0, step=0.1)
+        cd4_count = st.number_input("CD4 Count", min_value=0, max_value=2000, value=500, step=1)
+        age = st.number_input("Age (years)", min_value=0, max_value=120, value=35, step=1)
+        
+        # Binary features
+        counseling = st.selectbox("Counseling", ["Yes", "No"], index=0)
+        disclosure = st.selectbox("Disclosure", ["Yes", "No"], index=0)
+        gender = st.selectbox("Gender", ["Male", "Female"], index=0)
+    
+    with col2:
+        st.markdown("**Socioeconomic Factors**")
+        # Categorical features
+        funds = st.selectbox("Funding Source", ["Government", "Private", "NGO", "Self", "Other"], index=0)
+        mstatus = st.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed", "Other"], index=1)
+        employment = st.selectbox("Employment Status", ["Employed", "Unemployed", "Student", "Retired", "Other"], index=0)
+        education = st.selectbox("Education Level", ["None", "Primary", "Secondary", "Tertiary", "Other"], index=2)
+        religion = st.selectbox("Religion", ["Christian", "Muslim", "Hindu", "Other", "None"], index=0)
+    
+    with col3:
+        st.markdown("**Clinical Factors**")
+        whostage = st.selectbox("WHO Stage", ["Stage 1", "Stage 2", "Stage 3", "Stage 4"], index=0)
+        agecat = st.selectbox("Age Category", ["<25", "25-34", "35-44", "45-54", "55+"], index=1)
+        weightcat = st.selectbox("Weight Category", ["Underweight", "Normal", "Overweight", "Obese"], index=1)
+    
+    # Submit button
+    submitted = st.form_submit_button("🔮 Predict LTFU Risk", use_container_width=True)
+
+# Process prediction when form is submitted
+if submitted:
+    st.markdown("---")
+    st.subheader("📊 Prediction Results")
+    
+    # Create input data
+    input_data = {
+        'durationindays': duration_days,
+        'weight': weight,
+        'cd4': cd4_count,
+        'age': age,
+        'counseling': 1 if counseling == "Yes" else 0,
+        'disclosure': 1 if disclosure == "Yes" else 0,
+        'gender': 1 if gender == "Male" else 0,
+        'funds': funds,
+        'mstatus': mstatus,
+        'employmenstat': employment,
+        'education': education,
+        'religion': religion,
+        'whostage': whostage,
+        'agecat': agecat,
+        'weightcat': weightcat
+    }
+    
+    # Convert to DataFrame
+    input_df = pd.DataFrame([input_data])
+    
+    # Ensure all columns are present and in correct order
+    for col in X.columns:
+        if col not in input_df.columns:
+            if col in num_cols:
+                input_df[col] = 0.0
+            elif col in bin_cols:
+                input_df[col] = 0
+            elif col in cat_cols:
+                input_df[col] = "Unknown"
+    
+    # Reorder columns to match training data
+    input_df = input_df[X.columns]
+    
+    try:
+        # Get predictions from both models
+        lr_prob = logit.predict_proba(input_df)[0, 1]
+        xgb_prob = xgb_clf.predict_proba(input_df)[0, 1]
+        
+        # Get binary predictions
+        lr_pred = 1 if lr_prob >= default_threshold else 0
+        xgb_pred = 1 if xgb_prob >= default_threshold else 0
+        
+        # Display results
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("### 🧠 Logistic Regression")
+            st.metric("LTFU Risk Score", f"{lr_prob:.3f}", help="Probability of being lost to follow-up (0-1)")
+            st.metric("Prediction", "🔴 HIGH RISK" if lr_pred == 1 else "🟢 LOW RISK")
+            
+            # Risk interpretation
+            if lr_prob < 0.3:
+                risk_level = "🟢 Low Risk"
+                recommendation = "Continue current care plan"
+            elif lr_prob < 0.7:
+                risk_level = "🟡 Medium Risk"
+                recommendation = "Consider additional support interventions"
+            else:
+                risk_level = "🔴 High Risk"
+                recommendation = "Implement intensive follow-up protocols"
+            
+            st.info(f"**Risk Level:** {risk_level}")
+            st.info(f"**Recommendation:** {recommendation}")
+        
+        with col2:
+            st.markdown("### 🌳 XGBoost")
+            st.metric("LTFU Risk Score", f"{xgb_prob:.3f}", help="Probability of being lost to follow-up (0-1)")
+            st.metric("Prediction", "🔴 HIGH RISK" if xgb_pred == 1 else "🟢 LOW RISK")
+            
+            # Risk interpretation
+            if xgb_prob < 0.3:
+                risk_level = "🟢 Low Risk"
+                recommendation = "Continue current care plan"
+            elif xgb_prob < 0.7:
+                risk_level = "🟡 Medium Risk"
+                recommendation = "Consider additional support interventions"
+            else:
+                risk_level = "🔴 High Risk"
+                recommendation = "Implement intensive follow-up protocols"
+            
+            st.info(f"**Risk Level:** {risk_level}")
+            st.info(f"**Recommendation:** {recommendation}")
+        
+        # Model agreement
+        st.markdown("### 🤝 Model Agreement")
+        if lr_pred == xgb_pred:
+            st.success("✅ **Models Agree:** Both models predict the same outcome")
+        else:
+            st.warning("⚠️ **Models Disagree:** Consider both predictions and clinical judgment")
+        
+        # Average prediction
+        avg_prob = (lr_prob + xgb_prob) / 2
+        avg_pred = 1 if avg_prob >= default_threshold else 0
+        
+        st.markdown("### 📈 Ensemble Prediction")
+        st.metric("Average Risk Score", f"{avg_prob:.3f}")
+        st.metric("Ensemble Prediction", "🔴 HIGH RISK" if avg_pred == 1 else "🟢 LOW RISK")
+        
+        # Feature importance for this prediction (if available)
+        try:
+            st.markdown("### 🔍 Key Risk Factors")
+            # Get feature importance from XGBoost
+            feature_importance = xgb_clf.named_steps['clf'].feature_importances_
+            feature_names = X.columns
+            
+            # Create importance dataframe
+            importance_df = pd.DataFrame({
+                'Feature': feature_names,
+                'Importance': feature_importance
+            }).sort_values('Importance', ascending=False).head(10)
+            
+            st.dataframe(importance_df, use_container_width=True)
+        except:
+            st.info("Feature importance not available for this prediction")
+    
+    except Exception as e:
+        st.error(f"Error making prediction: {str(e)}")
+        st.write("Please ensure all required fields are filled correctly.")
+
+st.markdown("---")
+
 # Predictions & download
-st.subheader("Scored Test Set")
+st.subheader("📋 Test Set Predictions")
 scored = X_test.copy()
 scored["y_true"] = y_test.values
 scored["p_lr"] = prob_lr
