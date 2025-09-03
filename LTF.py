@@ -56,7 +56,7 @@ st.set_page_config(page_title="LTFU Analyzer", layout="wide")
 st.title("📊 LTFU Analyzer — HIV Care ")
 st.caption("Upload your dataset, pick columns, train models, and explore insights.")
 
-# Performance notice
+# Performance notice - Updated for deployment
 st.info("🚀 **Performance Optimized:** Models are cached for faster loading. SHAP analysis is optional to reduce computation time.")
 
 RANDOM_STATE = 42
