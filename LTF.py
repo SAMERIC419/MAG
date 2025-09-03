@@ -19,6 +19,9 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import streamlit as st
+import pickle
+import os
+from datetime import datetime
 
 from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.compose import ColumnTransformer
@@ -63,6 +66,35 @@ use_class_weight = st.sidebar.checkbox("Logistic: balanced class_weight", value=
 use_early_stopping = st.sidebar.checkbox("XGBoost: early stopping", value=True)
 
 st.sidebar.markdown("---")
+st.sidebar.header("5) Model Management")
+
+# Check for saved models
+models_exist, model_metadata = check_saved_models()
+
+if models_exist:
+    st.sidebar.success("✅ **Models Available**")
+    st.sidebar.write(f"**Trained:** {model_metadata['timestamp'][:10]}")
+    st.sidebar.write(f"**Features:** {len(model_metadata['num_cols']) + len(model_metadata['bin_cols']) + len(model_metadata['cat_cols'])}")
+    
+    # Option to use saved models or retrain
+    use_saved_models = st.sidebar.radio(
+        "Choose mode:",
+        ["Use Saved Models (Fast)", "Train New Models"],
+        index=0
+    )
+    
+    if st.sidebar.button("🗑️ Delete Saved Models"):
+        import shutil
+        if os.path.exists("saved_models"):
+            shutil.rmtree("saved_models")
+        st.sidebar.success("Models deleted!")
+        st.rerun()
+else:
+    st.sidebar.warning("⚠️ **No Saved Models**")
+    st.sidebar.write("Upload data and train models first")
+    use_saved_models = "Train New Models"
+
+st.sidebar.markdown("---")
 st.sidebar.info("This app follows my study's methodology (variables, splits, metrics, and interpretability).")
 
 # ===== Helpers =====
@@ -72,6 +104,66 @@ def read_df(file):
         return pd.read_csv(file)
     else:
         return pd.read_excel(file)
+
+def save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
+    """Save trained models and metadata to disk"""
+    try:
+        # Create models directory if it doesn't exist
+        os.makedirs("saved_models", exist_ok=True)
+        
+        # Save models
+        with open("saved_models/logit_model.pkl", "wb") as f:
+            pickle.dump(logit, f)
+        with open("saved_models/xgb_model.pkl", "wb") as f:
+            pickle.dump(xgb_clf, f)
+        
+        # Save metadata
+        metadata = {
+            "num_cols": num_cols,
+            "bin_cols": bin_cols,
+            "cat_cols": cat_cols,
+            "model_info": model_info,
+            "timestamp": datetime.now().isoformat()
+        }
+        with open("saved_models/metadata.pkl", "wb") as f:
+            pickle.dump(metadata, f)
+        
+        return True
+    except Exception as e:
+        st.error(f"Error saving models: {e}")
+        return False
+
+def load_models():
+    """Load trained models and metadata from disk"""
+    try:
+        if not os.path.exists("saved_models"):
+            return None, None, None, None, None, None
+        
+        # Load models
+        with open("saved_models/logit_model.pkl", "rb") as f:
+            logit = pickle.load(f)
+        with open("saved_models/xgb_model.pkl", "rb") as f:
+            xgb_clf = pickle.load(f)
+        
+        # Load metadata
+        with open("saved_models/metadata.pkl", "rb") as f:
+            metadata = pickle.load(f)
+        
+        return logit, xgb_clf, metadata["num_cols"], metadata["bin_cols"], metadata["cat_cols"], metadata
+    except Exception as e:
+        st.error(f"Error loading models: {e}")
+        return None, None, None, None, None, None
+
+def check_saved_models():
+    """Check if saved models exist and return their info"""
+    if os.path.exists("saved_models/metadata.pkl"):
+        try:
+            with open("saved_models/metadata.pkl", "rb") as f:
+                metadata = pickle.load(f)
+            return True, metadata
+        except:
+            return False, None
+    return False, None
 
 def train_models_cached(X_train, y_train, X_val, y_val, use_class_weight, use_early_stopping, num_cols, bin_cols, cat_cols):
     """Cache model training to avoid retraining on every page load"""
@@ -188,6 +280,203 @@ def fit_onehot_categories(df, cat_cols):
     return vals
 
 # ===== Main workflow =====
+# Initialize variables
+logit, xgb_clf, num_cols, bin_cols, cat_cols, X, y = None, None, None, None, None, None, None
+
+# Check if we should use saved models
+if use_saved_models == "Use Saved Models (Fast)":
+    st.info("🚀 **Using Saved Models** - Fast prediction mode enabled!")
+    
+    # Load saved models
+    with st.spinner("Loading saved models..."):
+        logit, xgb_clf, num_cols, bin_cols, cat_cols, metadata = load_models()
+    
+    if logit is not None and xgb_clf is not None:
+        st.success("✅ Models loaded successfully!")
+        st.write(f"**Model Info:** Trained on {metadata['timestamp'][:10]} with {len(metadata['num_cols']) + len(metadata['bin_cols']) + len(metadata['cat_cols'])} features")
+        
+        # Create dummy X for prediction form compatibility
+        X = pd.DataFrame(columns=metadata['num_cols'] + metadata['bin_cols'] + metadata['cat_cols'])
+        y = pd.Series([0, 1])  # Dummy target for compatibility
+        
+        # Skip to prediction form
+        st.markdown("---")
+        st.subheader("🔮 Interactive LTFU Prediction")
+        st.write("Enter patient details below to get real-time LTFU predictions from both models:")
+        
+        # Create prediction form (same as before but with loaded models)
+        with st.form("prediction_form"):
+            st.markdown("### Patient Information")
+            
+            # Create columns for better layout
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**Demographics**")
+                # Numeric features
+                duration_days = st.number_input("Duration in Days", min_value=0, max_value=10000, value=365, step=1)
+                weight = st.number_input("Weight (kg)", min_value=0.0, max_value=200.0, value=60.0, step=0.1)
+                cd4_count = st.number_input("CD4 Count", min_value=0, max_value=2000, value=500, step=1)
+                age = st.number_input("Age (years)", min_value=0, max_value=120, value=35, step=1)
+                
+                # Binary features
+                counseling = st.selectbox("Counseling", ["Yes", "No"], index=0)
+                disclosure = st.selectbox("Disclosure", ["Yes", "No"], index=0)
+                gender = st.selectbox("Gender", ["Male", "Female"], index=0)
+            
+            with col2:
+                st.markdown("**Socioeconomic Factors**")
+                # Categorical features
+                funds = st.selectbox("Funding Source", ["Government", "Private", "NGO", "Self", "Other"], index=0)
+                mstatus = st.selectbox("Marital Status", ["Single", "Married", "Divorced", "Widowed", "Other"], index=1)
+                employment = st.selectbox("Employment Status", ["Employed", "Unemployed", "Student", "Retired", "Other"], index=0)
+                education = st.selectbox("Education Level", ["None", "Primary", "Secondary", "Tertiary", "Other"], index=2)
+                religion = st.selectbox("Religion", ["Christian", "Muslim", "Hindu", "Other", "None"], index=0)
+            
+            with col3:
+                st.markdown("**Clinical Factors**")
+                whostage = st.selectbox("WHO Stage", ["Stage 1", "Stage 2", "Stage 3", "Stage 4"], index=0)
+                # Age category will be calculated automatically from age input
+                weightcat = st.selectbox("Weight Category", ["Underweight", "Normal", "Overweight", "Obese"], index=1)
+            
+            # Submit button
+            submitted = st.form_submit_button("🔮 Predict LTFU Risk", use_container_width=True)
+        
+        # Process prediction when form is submitted
+        if submitted:
+            st.markdown("---")
+            st.subheader("📊 Prediction Results")
+            
+            # Function to automatically calculate age category from age
+            def get_age_category(age_value):
+                if age_value < 25:
+                    return "<25"
+                elif age_value < 35:
+                    return "25-34"
+                elif age_value < 45:
+                    return "35-44"
+                elif age_value < 55:
+                    return "45-54"
+                else:
+                    return "55+"
+            
+            # Calculate age category automatically from age input
+            agecat = get_age_category(age)
+            
+            # Show the calculated age category to the user
+            st.info(f"📊 **Age Category:** {age} years → {agecat}")
+            
+            # Create input data
+            input_data = {
+                'durationindays': duration_days,
+                'weight': weight,
+                'cd4': cd4_count,
+                'age': age,
+                'counseling': 1 if counseling == "Yes" else 0,
+                'disclosure': 1 if disclosure == "Yes" else 0,
+                'gender': 1 if gender == "Male" else 0,
+                'funds': funds,
+                'mstatus': mstatus,
+                'employmenstat': employment,
+                'education': education,
+                'religion': religion,
+                'whostage': whostage,
+                'agecat': agecat,  # Now automatically calculated
+                'weightcat': weightcat
+            }
+            
+            # Convert to DataFrame
+            input_df = pd.DataFrame([input_data])
+            
+            # Ensure all columns are present and in correct order
+            for col in metadata['num_cols'] + metadata['bin_cols'] + metadata['cat_cols']:
+                if col not in input_df.columns:
+                    if col in metadata['num_cols']:
+                        input_df[col] = 0.0
+                    elif col in metadata['bin_cols']:
+                        input_df[col] = 0
+                    elif col in metadata['cat_cols']:
+                        input_df[col] = "Unknown"
+            
+            # Reorder columns to match training data
+            input_df = input_df[metadata['num_cols'] + metadata['bin_cols'] + metadata['cat_cols']]
+            
+            try:
+                # Get predictions from both models
+                with st.spinner("Computing predictions..."):
+                    lr_prob = logit.predict_proba(input_df)[0, 1]
+                    xgb_prob = xgb_clf.predict_proba(input_df)[0, 1]
+                
+                # Get binary predictions
+                lr_pred = 1 if lr_prob >= default_threshold else 0
+                xgb_pred = 1 if xgb_prob >= default_threshold else 0
+                
+                # Display results
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    st.markdown("### 🧠 Logistic Regression")
+                    st.metric("LTFU Risk Score", f"{lr_prob:.3f}", help="Probability of being lost to follow-up (0-1)")
+                    st.metric("Prediction", "🔴 HIGH RISK" if lr_pred == 1 else "🟢 LOW RISK")
+                    
+                    # Risk interpretation
+                    if lr_prob < 0.3:
+                        risk_level = "🟢 Low Risk"
+                        recommendation = "Continue current care plan"
+                    elif lr_prob < 0.7:
+                        risk_level = "🟡 Medium Risk"
+                        recommendation = "Consider additional support interventions"
+                    else:
+                        risk_level = "🔴 High Risk"
+                        recommendation = "Implement intensive follow-up protocols"
+                    
+                    st.info(f"**Risk Level:** {risk_level}")
+                    st.info(f"**Recommendation:** {recommendation}")
+                
+                with col2:
+                    st.markdown("### 🌳 XGBoost")
+                    st.metric("LTFU Risk Score", f"{xgb_prob:.3f}", help="Probability of being lost to follow-up (0-1)")
+                    st.metric("Prediction", "🔴 HIGH RISK" if xgb_pred == 1 else "🟢 LOW RISK")
+                    
+                    # Risk interpretation
+                    if xgb_prob < 0.3:
+                        risk_level = "🟢 Low Risk"
+                        recommendation = "Continue current care plan"
+                    elif xgb_prob < 0.7:
+                        risk_level = "🟡 Medium Risk"
+                        recommendation = "Consider additional support interventions"
+                    else:
+                        risk_level = "🔴 High Risk"
+                        recommendation = "Implement intensive follow-up protocols"
+                    
+                    st.info(f"**Risk Level:** {risk_level}")
+                    st.info(f"**Recommendation:** {recommendation}")
+                
+                # Model agreement
+                st.markdown("### 🤝 Model Agreement")
+                if lr_pred == xgb_pred:
+                    st.success("✅ **Models Agree:** Both models predict the same outcome")
+                else:
+                    st.warning("⚠️ **Models Disagree:** Consider both predictions and clinical judgment")
+                
+                # Average prediction
+                avg_prob = (lr_prob + xgb_prob) / 2
+                avg_pred = 1 if avg_prob >= default_threshold else 0
+                
+                st.markdown("### 📈 Ensemble Prediction")
+                st.metric("Average Risk Score", f"{avg_prob:.3f}")
+                st.metric("Ensemble Prediction", "🔴 HIGH RISK" if avg_pred == 1 else "🟢 LOW RISK")
+                
+            except Exception as e:
+                st.error(f"Error making prediction: {str(e)}")
+                st.write("Please ensure all required fields are filled correctly.")
+        
+        st.stop()  # Stop here if using saved models
+    else:
+        st.error("❌ Failed to load saved models. Please train new models.")
+        st.stop()
+
+# If we reach here, we need to train new models
 if upload is None:
     st.info("👆 Upload an Excel/CSV file to begin. Expected columns can be mapped after upload.")
     st.stop()
@@ -394,6 +683,20 @@ with st.spinner("Training models (cached for faster loading)…"):
             num_cols, bin_cols, cat_cols
         )
         st.success("✅ Models trained and cached successfully!")
+        
+        # Save models for future use
+        model_info = {
+            "dataset_shape": X.shape,
+            "target_distribution": y.value_counts().to_dict(),
+            "features_used": len(num_cols) + len(bin_cols) + len(cat_cols),
+            "training_date": datetime.now().isoformat()
+        }
+        
+        if save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
+            st.success("💾 **Models saved successfully!** You can now use 'Use Saved Models (Fast)' mode for instant predictions.")
+    else:
+            st.warning("⚠️ Models trained but could not be saved. You'll need to retrain next time.")
+            
     except Exception as e:
         st.error(f"Error training models: {str(e)}")
         st.write("**Debug info:**")
@@ -472,8 +775,8 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
                 cv_pipe.fit(X_tr, y_tr)
                 y_prob = cv_pipe.predict_proba(X_te)[:, 1]
             else:
-                pipe.fit(X_tr, y_tr)
-                y_prob = pipe.predict_proba(X_te)[:, 1]
+            pipe.fit(X_tr, y_tr)
+            y_prob = pipe.predict_proba(X_te)[:, 1]
             
             aucs.append(roc_auc_score(y_te, y_prob))
         return float(np.mean(aucs)), float(np.std(aucs))
@@ -536,36 +839,36 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
                 X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
                 y_test_sample = y_test[X_test_sample.index]
                 
-                # Use transformed features
+    # Use transformed features
                 X_test_proc = xgb_clf.named_steps["prep"].transform(X_test_sample)
-                explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
-                shap_values = explainer.shap_values(X_test_proc)
+    explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
+    shap_values = explainer.shap_values(X_test_proc)
 
-                # Feature names
-                pre = xgb_clf.named_steps["prep"]
-                oh = pre.named_transformers_["cat"].named_steps["onehot"]
-                cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
-                num_feat_names = [c for c in num_cols if c in X.columns]
-                bin_feat_names = [c for c in bin_cols if c in X.columns]
-                feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
+    # Feature names
+    pre = xgb_clf.named_steps["prep"]
+    oh = pre.named_transformers_["cat"].named_steps["onehot"]
+    cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+    num_feat_names = [c for c in num_cols if c in X.columns]
+    bin_feat_names = [c for c in bin_cols if c in X.columns]
+    feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Global importance (summary plot)**")
-                    fig = plt.figure()
-                    shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
-                    st.pyplot(fig, clear_figure=True)
-                with col2:
-                    st.markdown("**Pick a row for a local explanation**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Global importance (summary plot)**")
+        fig = plt.figure()
+        shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
+        st.pyplot(fig, clear_figure=True)
+    with col2:
+        st.markdown("**Pick a row for a local explanation**")
                     row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
-                    fig2 = plt.figure()
+        fig2 = plt.figure()
                     # Use waterfall plot instead of deprecated force_plot
                     shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
                                        feature_names=feature_names, show=False)
-                    st.pyplot(fig2, clear_figure=True)
+        st.pyplot(fig2, clear_figure=True)
                 
                 st.success(f"✅ SHAP analysis completed on {sample_size} samples!")
-            except Exception as e:
+except Exception as e:
                 st.error(f"SHAP visualization failed: {e}")
                 st.info("Try reducing the dataset size or check your data format.")
 
