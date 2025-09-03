@@ -1052,9 +1052,31 @@ if submitted:
         # Feature importance for this prediction (if available)
         try:
             st.markdown("### 🔍 Key Risk Factors")
-            # Get feature importance from XGBoost
-            feature_importance = xgb_clf.named_steps['clf'].feature_importances_
-            feature_names = X.columns
+            # Get feature importance from XGBoost (access the actual XGBoost model)
+            xgb_model = xgb_clf.named_steps['clf']
+            feature_importance = xgb_model.feature_importances_
+            
+            # Get feature names from the preprocessor
+            preprocessor = xgb_clf.named_steps['prep']
+            
+            # Try to get feature names from the preprocessor
+            try:
+                if hasattr(preprocessor, 'get_feature_names_out'):
+                    feature_names = preprocessor.get_feature_names_out()
+                else:
+                    # Fallback: construct feature names manually
+                    num_feat_names = [c for c in num_cols if c in X.columns]
+                    bin_feat_names = [c for c in bin_cols if c in X.columns]
+                    
+                    # Get categorical feature names from one-hot encoder
+                    cat_transformer = preprocessor.named_transformers_['cat']
+                    oh_encoder = cat_transformer.named_steps['onehot']
+                    cat_feat_names = oh_encoder.get_feature_names_out([c for c in cat_cols if c in X.columns])
+                    
+                    feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
+            except:
+                # Final fallback: use original column names
+                feature_names = list(X.columns)
             
             # Create importance dataframe
             importance_df = pd.DataFrame({
@@ -1063,8 +1085,14 @@ if submitted:
             }).sort_values('Importance', ascending=False).head(10)
             
             st.dataframe(importance_df, use_container_width=True)
-        except:
-            st.info("Feature importance not available for this prediction")
+            
+            # Show top 3 most important features
+            top_features = importance_df.head(3)
+            st.info(f"**Top Risk Factors:** {', '.join(top_features['Feature'].tolist())}")
+            
+        except Exception as e:
+            st.info(f"Feature importance not available: {str(e)}")
+            st.info("This is normal for some model configurations.")
     
     except Exception as e:
         st.error(f"Error making prediction: {str(e)}")
