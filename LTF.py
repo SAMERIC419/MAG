@@ -300,7 +300,69 @@ if use_saved_models == "Use Saved Models (Fast)":
         X = pd.DataFrame(columns=metadata['num_cols'] + metadata['bin_cols'] + metadata['cat_cols'])
         y = pd.Series([0, 1])  # Dummy target for compatibility
         
-        # Skip to prediction form
+        # Show model evaluation sections even with saved models
+        st.markdown("---")
+        st.subheader("📊 Model Evaluation & Analysis")
+        st.info("💡 **Note:** Using saved models. To see full evaluation metrics, you can retrain with new data or use the prediction form below.")
+        
+        # Show basic model info
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("Logistic Regression", "✅ Trained & Ready")
+            st.caption(f"Features: {len(metadata['num_cols']) + len(metadata['bin_cols']) + len(metadata['cat_cols'])}")
+        with col2:
+            st.metric("XGBoost", "✅ Trained & Ready")
+            st.caption(f"Trained: {metadata['timestamp'][:10]}")
+        
+        # Show model training info if available
+        if 'model_info' in metadata:
+            with st.expander("📋 Model Training Details", expanded=False):
+                model_info = metadata['model_info']
+                st.write(f"**Dataset Shape:** {model_info.get('dataset_shape', 'N/A')}")
+                st.write(f"**Features Used:** {model_info.get('features_used', 'N/A')}")
+                st.write(f"**Training Date:** {model_info.get('training_date', 'N/A')}")
+                
+                if 'target_distribution' in model_info:
+                    st.write("**Target Distribution:**")
+                    st.write(model_info['target_distribution'])
+        
+        # Show feature importance if available
+        try:
+            st.subheader("🔍 Feature Importance (XGBoost)")
+            xgb_model = xgb_clf.named_steps['clf']
+            feature_importance = xgb_model.feature_importances_
+            
+            # Get feature names
+            preprocessor = xgb_clf.named_steps['prep']
+            try:
+                if hasattr(preprocessor, 'get_feature_names_out'):
+                    feature_names = preprocessor.get_feature_names_out()
+                else:
+                    # Fallback: construct feature names manually
+                    num_feat_names = [c for c in metadata['num_cols'] if c in metadata['num_cols']]
+                    bin_feat_names = [c for c in metadata['bin_cols'] if c in metadata['bin_cols']]
+                    
+                    # Get categorical feature names from one-hot encoder
+                    cat_transformer = preprocessor.named_transformers_['cat']
+                    oh_encoder = cat_transformer.named_steps['onehot']
+                    cat_feat_names = oh_encoder.get_feature_names_out([c for c in metadata['cat_cols'] if c in metadata['cat_cols']])
+                    
+                    feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
+            except:
+                # Final fallback: use original column names
+                feature_names = metadata['num_cols'] + metadata['bin_cols'] + metadata['cat_cols']
+            
+            # Create importance dataframe
+            importance_df = pd.DataFrame({
+                'Feature': feature_names,
+                'Importance': feature_importance
+            }).sort_values('Importance', ascending=False).head(10)
+            
+            st.dataframe(importance_df, use_container_width=True)
+            
+        except Exception as e:
+            st.info(f"Feature importance not available: {str(e)}")
+        
         st.markdown("---")
         st.subheader("🔮 Interactive LTFU Prediction")
         st.write("Enter patient details below to get real-time LTFU predictions from both models:")
@@ -695,7 +757,7 @@ with st.spinner("Training models (cached for faster loading)…"):
         
         if save_models(logit, xgb_clf, num_cols, bin_cols, cat_cols, model_info):
             st.success("💾 **Models saved successfully!** You can now use 'Use Saved Models (Fast)' mode for instant predictions.")
-        else:
+    else:
             st.warning("⚠️ Models trained but could not be saved. You'll need to retrain next time.")
             
     except Exception as e:
@@ -776,8 +838,8 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
                 cv_pipe.fit(X_tr, y_tr)
                 y_prob = cv_pipe.predict_proba(X_te)[:, 1]
             else:
-                pipe.fit(X_tr, y_tr)
-                y_prob = pipe.predict_proba(X_te)[:, 1]
+            pipe.fit(X_tr, y_tr)
+            y_prob = pipe.predict_proba(X_te)[:, 1]
             
             aucs.append(roc_auc_score(y_te, y_prob))
         return float(np.mean(aucs)), float(np.std(aucs))
@@ -857,33 +919,33 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
                 X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
                 y_test_sample = y_test[X_test_sample.index]
                 
-                # Use transformed features
+    # Use transformed features
                 X_test_proc = xgb_clf.named_steps["prep"].transform(X_test_sample)
-                explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
-                shap_values = explainer.shap_values(X_test_proc)
+    explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
+    shap_values = explainer.shap_values(X_test_proc)
 
-                # Feature names
-                pre = xgb_clf.named_steps["prep"]
-                oh = pre.named_transformers_["cat"].named_steps["onehot"]
-                cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
-                num_feat_names = [c for c in num_cols if c in X.columns]
-                bin_feat_names = [c for c in bin_cols if c in X.columns]
-                feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
+    # Feature names
+    pre = xgb_clf.named_steps["prep"]
+    oh = pre.named_transformers_["cat"].named_steps["onehot"]
+    cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+    num_feat_names = [c for c in num_cols if c in X.columns]
+    bin_feat_names = [c for c in bin_cols if c in X.columns]
+    feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Global importance (summary plot)**")
-                    fig = plt.figure()
-                    shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
-                    st.pyplot(fig, clear_figure=True)
-                with col2:
-                    st.markdown("**Pick a row for a local explanation**")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("**Global importance (summary plot)**")
+        fig = plt.figure()
+        shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
+        st.pyplot(fig, clear_figure=True)
+    with col2:
+        st.markdown("**Pick a row for a local explanation**")
                     row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
-                    fig2 = plt.figure()
+        fig2 = plt.figure()
                     # Use waterfall plot instead of deprecated force_plot
                     shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
                                        feature_names=feature_names, show=False)
-                    st.pyplot(fig2, clear_figure=True)
+        st.pyplot(fig2, clear_figure=True)
                 
                 st.success(f"✅ SHAP analysis completed on {sample_size} samples!")
             except Exception as e:
@@ -1108,7 +1170,7 @@ if submitted:
             top_features = importance_df.head(3)
             st.info(f"**Top Risk Factors:** {', '.join(top_features['Feature'].tolist())}")
             
-        except Exception as e:
+except Exception as e:
             st.info(f"Feature importance not available: {str(e)}")
             st.info("This is normal for some model configurations.")
     
