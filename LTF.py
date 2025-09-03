@@ -475,8 +475,8 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
                 cv_pipe.fit(X_tr, y_tr)
                 y_prob = cv_pipe.predict_proba(X_te)[:, 1]
             else:
-            pipe.fit(X_tr, y_tr)
-            y_prob = pipe.predict_proba(X_te)[:, 1]
+                pipe.fit(X_tr, y_tr)
+                y_prob = pipe.predict_proba(X_te)[:, 1]
             
             aucs.append(roc_auc_score(y_te, y_prob))
         return float(np.mean(aucs)), float(np.std(aucs))
@@ -539,36 +539,36 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
                 X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
                 y_test_sample = y_test[X_test_sample.index]
                 
-    # Use transformed features
+                # Use transformed features
                 X_test_proc = xgb_clf.named_steps["prep"].transform(X_test_sample)
-    explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
-    shap_values = explainer.shap_values(X_test_proc)
+                explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
+                shap_values = explainer.shap_values(X_test_proc)
 
-    # Feature names
-    pre = xgb_clf.named_steps["prep"]
-    oh = pre.named_transformers_["cat"].named_steps["onehot"]
-    cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
-    num_feat_names = [c for c in num_cols if c in X.columns]
-    bin_feat_names = [c for c in bin_cols if c in X.columns]
-    feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
+                # Feature names
+                pre = xgb_clf.named_steps["prep"]
+                oh = pre.named_transformers_["cat"].named_steps["onehot"]
+                cat_feat_names = oh.get_feature_names_out([c for c in cat_cols if c in X.columns])
+                num_feat_names = [c for c in num_cols if c in X.columns]
+                bin_feat_names = [c for c in bin_cols if c in X.columns]
+                feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("**Global importance (summary plot)**")
-        fig = plt.figure()
-        shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
-        st.pyplot(fig, clear_figure=True)
-    with col2:
-        st.markdown("**Pick a row for a local explanation**")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("**Global importance (summary plot)**")
+                    fig = plt.figure()
+                    shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
+                    st.pyplot(fig, clear_figure=True)
+                with col2:
+                    st.markdown("**Pick a row for a local explanation**")
                     row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
-        fig2 = plt.figure()
+                    fig2 = plt.figure()
                     # Use waterfall plot instead of deprecated force_plot
                     shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
                                        feature_names=feature_names, show=False)
-        st.pyplot(fig2, clear_figure=True)
-                    
+                    st.pyplot(fig2, clear_figure=True)
+                
                 st.success(f"✅ SHAP analysis completed on {sample_size} samples!")
-except Exception as e:
+            except Exception as e:
                 st.error(f"SHAP visualization failed: {e}")
                 st.info("Try reducing the dataset size or check your data format.")
 
