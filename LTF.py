@@ -368,27 +368,40 @@ with st.spinner("Training models…"):
     try:
         # XGB with optional early stopping
         st.write("Training XGBoost...")
+        st.info("💡 **XGBoost Training Tips:** With your dataset size (34K+ samples), this may take 2-5 minutes. The model is optimized for faster training.")
+        
         Xtr_xgb = prep_xgb.fit_transform(X_train, y_train)
         Xva_xgb = prep_xgb.transform(X_val)
         ytr, yva = y_train.values, y_val.values
 
         xgb_model = xgb.XGBClassifier(
             objective="binary:logistic",
-            n_estimators=600,
-            learning_rate=0.05,
-            max_depth=5,
+            n_estimators=200,  # Reduced from 600 to 200 for faster training
+            learning_rate=0.1,  # Increased from 0.05 to 0.1 for faster convergence
+            max_depth=4,  # Reduced from 5 to 4 for faster training
             subsample=0.8,
             colsample_bytree=0.8,
             reg_lambda=1.0,
             random_state=RANDOM_STATE,
             eval_metric="auc",
-            early_stopping_rounds=50 if use_early_stopping else None,
+            early_stopping_rounds=20 if use_early_stopping else None,  # Reduced from 50 to 20
+            n_jobs=-1,  # Use all available CPU cores
         )
+        
+        # Add progress bar for XGBoost training
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
         if use_early_stopping:
+            status_text.text("Training XGBoost with early stopping...")
             xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False)
         else:
+            status_text.text("Training XGBoost...")
             xgb_model.fit(Xtr_xgb, ytr)
-
+        
+        progress_bar.progress(100)
+        status_text.text("✅ XGBoost training completed!")
+        
         xgb_clf = Pipeline(steps=[("prep", prep_xgb), ("clf", xgb_model)])
         st.write("✅ XGBoost trained successfully")
     except Exception as e:
