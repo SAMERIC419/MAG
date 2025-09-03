@@ -23,22 +23,42 @@ import pickle
 import os
 from datetime import datetime
 
-from sklearn.model_selection import train_test_split, StratifiedKFold
-from sklearn.compose import ColumnTransformer
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
-from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score,
-    roc_auc_score, confusion_matrix,
-    RocCurveDisplay, PrecisionRecallDisplay
-)
-from sklearn.inspection import permutation_importance
+# Lazy imports to reduce startup time
+try:
+    from sklearn.model_selection import train_test_split, StratifiedKFold
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
+    from sklearn.impute import SimpleImputer
+    from sklearn.pipeline import Pipeline
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.metrics import (
+        accuracy_score, precision_score, recall_score, f1_score,
+        roc_auc_score, confusion_matrix,
+        RocCurveDisplay, PrecisionRecallDisplay
+    )
+    from sklearn.inspection import permutation_importance
+except ImportError as e:
+    st.error(f"Error importing scikit-learn: {e}")
+    st.stop()
 
-import xgboost as xgb
-import shap
-import matplotlib.pyplot as plt
+# Lazy import for XGBoost
+try:
+    import xgboost as xgb
+except ImportError as e:
+    st.error(f"Error importing XGBoost: {e}")
+    st.stop()
+
+# Lazy import for SHAP (only when needed)
+try:
+    import shap
+except ImportError:
+    shap = None
+
+# Lazy import for matplotlib
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    plt = None
 
 # ===== Helper Functions (defined early to avoid NameError) =====
 def check_saved_models():
@@ -796,19 +816,22 @@ with m2:
     st.table(pd.Series(metrics_xgb).round(4))
 
 # Curves
-c1, c2 = st.columns(2)
-with c1:
-    st.markdown("**ROC Curves**")
-    fig, ax = plt.subplots()
-    RocCurveDisplay.from_predictions(y_test, prob_lr, name="Logistic", ax=ax)
-    RocCurveDisplay.from_predictions(y_test, prob_xgb, name="XGB", ax=ax)
-    st.pyplot(fig)
-with c2:
-    st.markdown("**Precision–Recall Curves**")
-    fig2, ax2 = plt.subplots()
-    PrecisionRecallDisplay.from_predictions(y_test, prob_lr, name="Logistic", ax=ax2)
-    PrecisionRecallDisplay.from_predictions(y_test, prob_xgb, name="XGB", ax=ax2)
-    st.pyplot(fig2)
+if plt is not None:
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("**ROC Curves**")
+        fig, ax = plt.subplots()
+        RocCurveDisplay.from_predictions(y_test, prob_lr, name="Logistic", ax=ax)
+        RocCurveDisplay.from_predictions(y_test, prob_xgb, name="XGB", ax=ax)
+        st.pyplot(fig)
+    with c2:
+        st.markdown("**Precision–Recall Curves**")
+        fig2, ax2 = plt.subplots()
+        PrecisionRecallDisplay.from_predictions(y_test, prob_lr, name="Logistic", ax=ax2)
+        PrecisionRecallDisplay.from_predictions(y_test, prob_xgb, name="XGB", ax=ax2)
+        st.pyplot(fig2)
+else:
+    st.warning("Matplotlib not available - skipping curve plots")
 
 # Confusion matrices at selected threshold
 cm1, cm2 = st.columns(2)
@@ -908,12 +931,13 @@ with imp_tabs[1]:
         st.warning(f"Could not compute names: {e}")
 
 # Interpretability — SHAP for XGBoost (Optional - can be slow)
-with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)", expanded=False):
-    st.info("💡 **Note:** SHAP calculations can be slow with large datasets. This is optional and cached for faster subsequent loads.")
-    
-    if st.button("🚀 Generate SHAP Explanations", type="primary"):
-        with st.spinner("Computing SHAP values (this may take 1-2 minutes)..."):
-            try:
+if shap is not None:
+    with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)", expanded=False):
+        st.info("💡 **Note:** SHAP calculations can be slow with large datasets. This is optional and cached for faster subsequent loads.")
+        
+        if st.button("🚀 Generate SHAP Explanations", type="primary"):
+            with st.spinner("Computing SHAP values (this may take 1-2 minutes)..."):
+                try:
                                                 # Use a smaller sample for SHAP to speed up computation
                 sample_size = min(1000, len(X_test))
                 X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
@@ -932,25 +956,30 @@ with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)"
                 bin_feat_names = [c for c in bin_cols if c in X.columns]
                 feature_names = list(num_feat_names) + list(bin_feat_names) + list(cat_feat_names)
 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.markdown("**Global importance (summary plot)**")
-                    fig = plt.figure()
-                    shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
-                    st.pyplot(fig, clear_figure=True)
-                with col2:
-                    st.markdown("**Pick a row for a local explanation**")
-                    row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
-                    fig2 = plt.figure()
-                    # Use waterfall plot instead of deprecated force_plot
-                    shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
-                                       feature_names=feature_names, show=False)
-                    st.pyplot(fig2, clear_figure=True)
+                if plt is not None:
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.markdown("**Global importance (summary plot)**")
+                        fig = plt.figure()
+                        shap.summary_plot(shap_values, features=X_test_proc, feature_names=feature_names, show=False)
+                        st.pyplot(fig, clear_figure=True)
+                    with col2:
+                        st.markdown("**Pick a row for a local explanation**")
+                        row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
+                        fig2 = plt.figure()
+                        # Use waterfall plot instead of deprecated force_plot
+                        shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
+                                           feature_names=feature_names, show=False)
+                        st.pyplot(fig2, clear_figure=True)
+                else:
+                    st.warning("Matplotlib not available - SHAP plots cannot be displayed")
                 
                 st.success(f"✅ SHAP analysis completed on {sample_size} samples!")
             except Exception as e:
                 st.error(f"SHAP visualization failed: {e}")
                 st.info("Try reducing the dataset size or check your data format.")
+else:
+    st.info("🔍 SHAP not available - install with: pip install shap")
 
 # Interactive Prediction Form
 st.subheader("🔮 Interactive LTFU Prediction")
