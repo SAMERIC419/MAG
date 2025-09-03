@@ -41,6 +41,9 @@ st.set_page_config(page_title="LTFU Analyzer", layout="wide")
 st.title("📊 LTFU Analyzer — HIV Care ")
 st.caption("Upload your dataset, pick columns, train models, and explore insights.")
 
+# Performance notice
+st.info("🚀 **Performance Optimized:** Models are cached for faster loading. SHAP analysis is optional to reduce computation time.")
+
 RANDOM_STATE = 42
 np.random.seed(RANDOM_STATE)
 
@@ -63,11 +66,97 @@ st.sidebar.markdown("---")
 st.sidebar.info("This app follows my study's methodology (variables, splits, metrics, and interpretability).")
 
 # ===== Helpers =====
+@st.cache_data(show_spinner=False)
 def read_df(file):
     if file.name.lower().endswith(".csv"):
         return pd.read_csv(file)
     else:
         return pd.read_excel(file)
+
+@st.cache_data(show_spinner=False)
+def train_models_cached(X_train, y_train, X_val, y_val, use_class_weight, use_early_stopping, num_cols, bin_cols, cat_cols):
+    """Cache model training to avoid retraining on every page load"""
+    
+    # Preprocess — Logistic
+    numeric_lr = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler()),
+    ])
+
+    binary_lr = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+    ])
+
+    categorical_lr = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+    ])
+
+    prep_lr = ColumnTransformer(
+        transformers=[
+            ("num", numeric_lr, [c for c in num_cols if c in X_train.columns]),
+            ("bin", binary_lr, [c for c in bin_cols if c in X_train.columns]),
+            ("cat", categorical_lr, [c for c in cat_cols if c in X_train.columns]),
+        ],
+        remainder="drop",
+    )
+
+    logit = Pipeline(steps=[
+        ("prep", prep_lr),
+        ("clf", LogisticRegression(
+            solver="liblinear", penalty="l2", max_iter=2000,
+            class_weight=("balanced" if use_class_weight else None),
+            random_state=RANDOM_STATE,
+        )),
+    ])
+
+    # Preprocess — XGB
+    numeric_xgb = Pipeline(steps=[("pass", "passthrough")])
+    binary_xgb = Pipeline(steps=[("imputer", SimpleImputer(strategy="most_frequent"))])
+    categorical_xgb = Pipeline(steps=[
+        ("imputer", SimpleImputer(strategy="most_frequent")),
+        ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+    ])
+
+    prep_xgb = ColumnTransformer(
+        transformers=[
+            ("num", numeric_xgb, [c for c in num_cols if c in X_train.columns]),
+            ("bin", binary_xgb, [c for c in bin_cols if c in X_train.columns]),
+            ("cat", categorical_xgb, [c for c in cat_cols if c in X_train.columns]),
+        ],
+        remainder="drop",
+    )
+
+    # Train Logistic Regression
+    logit.fit(X_train, y_train)
+    
+    # Train XGBoost
+    Xtr_xgb = prep_xgb.fit_transform(X_train, y_train)
+    Xva_xgb = prep_xgb.transform(X_val)
+    ytr, yva = y_train.values, y_val.values
+
+    xgb_model = xgb.XGBClassifier(
+        objective="binary:logistic",
+        n_estimators=100,  # Further reduced for faster training
+        learning_rate=0.15,  # Increased for faster convergence
+        max_depth=3,  # Reduced for faster training
+        subsample=0.8,
+        colsample_bytree=0.8,
+        reg_lambda=1.0,
+        random_state=RANDOM_STATE,
+        eval_metric="auc",
+        early_stopping_rounds=15 if use_early_stopping else None,
+        n_jobs=-1,
+    )
+    
+    if use_early_stopping:
+        xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False)
+    else:
+        xgb_model.fit(Xtr_xgb, ytr)
+    
+    xgb_clf = Pipeline(steps=[("prep", prep_xgb), ("clf", xgb_model)])
+    
+    return logit, xgb_clf
 
 DEFAULT_EXPECTED = {
     "ltfu": "ltfu",
@@ -298,114 +387,17 @@ X_train, X_val, y_train, y_val = train_test_split(
     X_trainval, y_trainval, test_size=val_frac, stratify=y_trainval, random_state=RANDOM_STATE
 )
 
-# Preprocess — Logistic
-numeric_lr = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="median")),
-    ("scaler", StandardScaler()),
-])
-
-binary_lr = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="most_frequent")),
-])
-
-categorical_lr = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-])
-
-prep_lr = ColumnTransformer(
-    transformers=[
-        ("num", numeric_lr, [c for c in num_cols if c in X.columns]),
-        ("bin", binary_lr, [c for c in bin_cols if c in X.columns]),
-        ("cat", categorical_lr, [c for c in cat_cols if c in X.columns]),
-    ],
-    remainder="drop",
-)
-
-logit = Pipeline(steps=[
-    ("prep", prep_lr),
-    ("clf", LogisticRegression(
-        solver="liblinear", penalty="l2", max_iter=2000,
-        class_weight=("balanced" if use_class_weight else None),
-        random_state=RANDOM_STATE,
-    )),
-])
-
-# Preprocess — XGB
-numeric_xgb = Pipeline(steps=[("pass", "passthrough")])
-binary_xgb = Pipeline(steps=[("imputer", SimpleImputer(strategy="most_frequent"))])
-categorical_xgb = Pipeline(steps=[
-    ("imputer", SimpleImputer(strategy="most_frequent")),
-    ("onehot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-])
-
-prep_xgb = ColumnTransformer(
-    transformers=[
-        ("num", numeric_xgb, [c for c in num_cols if c in X.columns]),
-        ("bin", binary_xgb, [c for c in bin_cols if c in X.columns]),
-        ("cat", categorical_xgb, [c for c in cat_cols if c in X.columns]),
-    ],
-    remainder="drop",
-)
-
-# Fit models
-with st.spinner("Training models…"):
+# Fit models with caching
+with st.spinner("Training models (cached for faster loading)…"):
     try:
-        # Logistic
-        st.write("Training Logistic Regression...")
-        logit.fit(X_train, y_train)
-        st.write("✅ Logistic Regression trained successfully")
-    except Exception as e:
-        st.error(f"Error training Logistic Regression: {str(e)}")
-        st.write("**Debug info:**")
-        st.write(f"- X_train shape: {X_train.shape}")
-        st.write(f"- X_train dtypes: {X_train.dtypes.tolist()}")
-        st.write(f"- y_train shape: {y_train.shape}")
-        st.write(f"- y_train dtypes: {y_train.dtype}")
-        st.write(f"- y_train unique values: {y_train.unique()}")
-        st.stop()
-
-    try:
-        # XGB with optional early stopping
-        st.write("Training XGBoost...")
-        st.info("💡 **XGBoost Training Tips:** With your dataset size (34K+ samples), this may take 2-5 minutes. The model is optimized for faster training.")
-        
-        Xtr_xgb = prep_xgb.fit_transform(X_train, y_train)
-        Xva_xgb = prep_xgb.transform(X_val)
-        ytr, yva = y_train.values, y_val.values
-
-        xgb_model = xgb.XGBClassifier(
-            objective="binary:logistic",
-            n_estimators=200,  # Reduced from 600 to 200 for faster training
-            learning_rate=0.1,  # Increased from 0.05 to 0.1 for faster convergence
-            max_depth=4,  # Reduced from 5 to 4 for faster training
-            subsample=0.8,
-            colsample_bytree=0.8,
-            reg_lambda=1.0,
-            random_state=RANDOM_STATE,
-            eval_metric="auc",
-            early_stopping_rounds=20 if use_early_stopping else None,  # Reduced from 50 to 20
-            n_jobs=-1,  # Use all available CPU cores
+        logit, xgb_clf = train_models_cached(
+            X_train, y_train, X_val, y_val, 
+            use_class_weight, use_early_stopping, 
+            num_cols, bin_cols, cat_cols
         )
-        
-        # Add progress bar for XGBoost training
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        if use_early_stopping:
-            status_text.text("Training XGBoost with early stopping...")
-            xgb_model.fit(Xtr_xgb, ytr, eval_set=[(Xva_xgb, yva)], verbose=False)
-        else:
-            status_text.text("Training XGBoost...")
-            xgb_model.fit(Xtr_xgb, ytr)
-        
-        progress_bar.progress(100)
-        status_text.text("✅ XGBoost training completed!")
-        
-        xgb_clf = Pipeline(steps=[("prep", prep_xgb), ("clf", xgb_model)])
-        st.write("✅ XGBoost trained successfully")
+        st.success("✅ Models trained and cached successfully!")
     except Exception as e:
-        st.error(f"Error training XGBoost: {str(e)}")
+        st.error(f"Error training models: {str(e)}")
         st.write("**Debug info:**")
         st.write(f"- X_train shape: {X_train.shape}")
         st.write(f"- X_val shape: {X_val.shape}")
@@ -413,10 +405,9 @@ with st.spinner("Training models…"):
         st.write(f"- y_val shape: {y_val.shape}")
         st.stop()
 
-st.success("Models trained.")
-
-# Evaluation helper
-def evaluate(model, X_te, y_te, name, threshold):
+# Evaluation helper with caching
+@st.cache_data(show_spinner=False)
+def evaluate_cached(model, X_te, y_te, name, threshold):
     y_prob = model.predict_proba(X_te)[:, 1]
     y_pred = (y_prob >= threshold).astype(int)
     metrics = {
@@ -428,9 +419,9 @@ def evaluate(model, X_te, y_te, name, threshold):
     }
     return metrics, y_prob, y_pred
 
-# Compute evals
-metrics_lr, prob_lr, pred_lr = evaluate(logit, X_test, y_test, "Logistic", default_threshold)
-metrics_xgb, prob_xgb, pred_xgb = evaluate(xgb_clf, X_test, y_test, "XGB", default_threshold)
+# Compute evals with caching
+metrics_lr, prob_lr, pred_lr = evaluate_cached(logit, X_test, y_test, "Logistic", default_threshold)
+metrics_xgb, prob_xgb, pred_xgb = evaluate_cached(xgb_clf, X_test, y_test, "XGB", default_threshold)
 
 # Layout
 m1, m2 = st.columns(2)
@@ -484,8 +475,8 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
                 cv_pipe.fit(X_tr, y_tr)
                 y_prob = cv_pipe.predict_proba(X_te)[:, 1]
             else:
-                pipe.fit(X_tr, y_tr)
-                y_prob = pipe.predict_proba(X_te)[:, 1]
+            pipe.fit(X_tr, y_tr)
+            y_prob = pipe.predict_proba(X_te)[:, 1]
             
             aucs.append(roc_auc_score(y_te, y_prob))
         return float(np.mean(aucs)), float(np.std(aucs))
@@ -536,11 +527,20 @@ with imp_tabs[1]:
     except Exception as e:
         st.warning(f"Could not compute names: {e}")
 
-# Interpretability — SHAP for XGBoost
-st.subheader("SHAP Explanations — XGBoost")
-try:
+# Interpretability — SHAP for XGBoost (Optional - can be slow)
+with st.expander("🔍 SHAP Explanations — XGBoost (Optional - may take time)", expanded=False):
+    st.info("💡 **Note:** SHAP calculations can be slow with large datasets. This is optional and cached for faster subsequent loads.")
+    
+    if st.button("🚀 Generate SHAP Explanations", type="primary"):
+        with st.spinner("Computing SHAP values (this may take 1-2 minutes)..."):
+            try:
+                # Use a smaller sample for SHAP to speed up computation
+                sample_size = min(1000, len(X_test))
+                X_test_sample = X_test.sample(n=sample_size, random_state=RANDOM_STATE)
+                y_test_sample = y_test[X_test_sample.index]
+                
     # Use transformed features
-    X_test_proc = xgb_clf.named_steps["prep"].transform(X_test)
+                X_test_proc = xgb_clf.named_steps["prep"].transform(X_test_sample)
     explainer = shap.TreeExplainer(xgb_clf.named_steps["clf"]) 
     shap_values = explainer.shap_values(X_test_proc)
 
@@ -560,14 +560,17 @@ try:
         st.pyplot(fig, clear_figure=True)
     with col2:
         st.markdown("**Pick a row for a local explanation**")
-        row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test)-1)), value=0, step=1)
+                    row_idx = st.number_input("Row index (0‑based)", min_value=0, max_value=int(max(0, len(y_test_sample)-1)), value=0, step=1)
         fig2 = plt.figure()
-        # Use waterfall plot instead of deprecated force_plot
-        shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
-                           feature_names=feature_names, show=False)
+                    # Use waterfall plot instead of deprecated force_plot
+                    shap.waterfall_plot(explainer.expected_value, shap_values[row_idx, :], 
+                                       feature_names=feature_names, show=False)
         st.pyplot(fig2, clear_figure=True)
+                    
+                st.success(f"✅ SHAP analysis completed on {sample_size} samples!")
 except Exception as e:
-    st.warning(f"SHAP visualization skipped: {e}")
+                st.error(f"SHAP visualization failed: {e}")
+                st.info("Try reducing the dataset size or check your data format.")
 
 # Interactive Prediction Form
 st.subheader("🔮 Interactive LTFU Prediction")
@@ -681,9 +684,10 @@ if submitted:
     input_df = input_df[common_cols]
     
     try:
-        # Get predictions from both models
-        lr_prob = logit.predict_proba(input_df)[0, 1]
-        xgb_prob = xgb_clf.predict_proba(input_df)[0, 1]
+        # Get predictions from both models (cached for faster response)
+        with st.spinner("Computing predictions..."):
+            lr_prob = logit.predict_proba(input_df)[0, 1]
+            xgb_prob = xgb_clf.predict_proba(input_df)[0, 1]
         
         # Get binary predictions
         lr_pred = 1 if lr_prob >= default_threshold else 0
