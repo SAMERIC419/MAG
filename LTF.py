@@ -475,8 +475,18 @@ with st.expander("Cross‑validation (5‑fold ROC‑AUC)"):
         for tr, te in skf.split(X_df, y_ser):
             X_tr, X_te = X_df.iloc[tr], X_df.iloc[te]
             y_tr, y_te = y_ser.iloc[tr], y_ser.iloc[te]
-            pipe.fit(X_tr, y_tr)
-            y_prob = pipe.predict_proba(X_te)[:, 1]
+            
+            # For XGBoost, create a new pipeline without early stopping for CV
+            if hasattr(pipe.named_steps.get('clf'), 'early_stopping_rounds'):
+                # Create a copy of the pipeline with early stopping disabled
+                cv_pipe = pipe.__class__(steps=pipe.steps)
+                cv_pipe.named_steps['clf'].early_stopping_rounds = None
+                cv_pipe.fit(X_tr, y_tr)
+                y_prob = cv_pipe.predict_proba(X_te)[:, 1]
+            else:
+                pipe.fit(X_tr, y_tr)
+                y_prob = pipe.predict_proba(X_te)[:, 1]
+            
             aucs.append(roc_auc_score(y_te, y_prob))
         return float(np.mean(aucs)), float(np.std(aucs))
     colA, colB = st.columns(2)
